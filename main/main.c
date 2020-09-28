@@ -47,6 +47,7 @@ esp_mqtt_client_handle_t client;
 #define MQTT_SPA_COMMAND_TOPIC "homeassistant/pool/spa/set"
 #define MQTT_POOL_LIGHT_COMMAND_TOPIC "homeassistant/pool/pool_light/set"
 #define MQTT_SPA_LIGHT_COMMAND_TOPIC "homeassistant/pool/spa_light/set"
+#define MQTT_CLEANER_COMMAND_TOPIC "homeassistant/pool/cleaner/set"
 
 #define SPA_STATE(x) (x >> 0) & 1
 #define CLEANER_STATE(x) (x >> 1) & 1
@@ -400,6 +401,8 @@ static esp_err_t mqtt_event_handler_cb(esp_mqtt_event_handle_t event)
         ESP_LOGI(TAG, "Subscribe to pool command topic, msg_id=%d", msg_id);
         msg_id = esp_mqtt_client_subscribe(client, MQTT_SPA_COMMAND_TOPIC, 0);
         ESP_LOGI(TAG, "Subscribe to spa command topic, msg_id=%d", msg_id);
+        msg_id = esp_mqtt_client_subscribe(client, MQTT_CLEANER_COMMAND_TOPIC, 0);
+        ESP_LOGI(TAG, "Subscribe to cleaner command topic, msg_id=%d", msg_id);
         msg_id = esp_mqtt_client_subscribe(client, MQTT_POOL_LIGHT_COMMAND_TOPIC, 0);
         ESP_LOGI(TAG, "Subscribe to pool_light command topic, msg_id=%d", msg_id);
         msg_id = esp_mqtt_client_subscribe(client, MQTT_SPA_LIGHT_COMMAND_TOPIC, 0);
@@ -434,6 +437,8 @@ static esp_err_t mqtt_event_handler_cb(esp_mqtt_event_handle_t event)
             feature = POOL_LIGHT;
         else if (strncmp(event->topic, MQTT_SPA_LIGHT_COMMAND_TOPIC, event->topic_len) == 0)
             feature = SPA_LIGHT;
+        if (strncmp(event->topic, MQTT_CLEANER_COMMAND_TOPIC, event->topic_len) == 0)
+            feature = CLEANER;
         else
         {
             ESP_LOGI(TAG, "Unknown feature topic %s", event->topic);
@@ -442,7 +447,7 @@ static esp_err_t mqtt_event_handler_cb(esp_mqtt_event_handle_t event)
         if (strncmp(event->data, "on", event->data_len) == 0)
         {
             ESP_LOGI(TAG, "Switching feature %02x ON **********************", feature);
-            sendCommand(REMOTE, MAIN, SET_CIRCUIT, feature, 1);
+            sendCommand(REMOTE, MAIN, SET_CIRCUIT, feature, 0);
         }
         else if (strncmp(event->data, "off", event->data_len) == 0)
         {
