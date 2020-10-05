@@ -17,7 +17,7 @@ const esp_mqtt_client_config_t mqtt_cfg = {
     .uri = "mqtt://nas.usner.net:1883",
     .username = "hauser",
     .password = "l3mm3IN",
-    .lwt_topic = "homeassistant/pool/active",
+    .lwt_topic = "homeassistant/switch/pool/active",
     .lwt_msg = "offline",
     .lwt_msg_len = 7,
     .lwt_qos = 0,
@@ -26,28 +26,22 @@ esp_mqtt_client_handle_t client;
 #define MQTT_LOOP_STACK_SIZE (2048)
 #define MQTT_LOOP_PRIO (11)
 
-#define MQTT_HASSIO_STATUS_TOPIC "homeassistant/status"
-#define MQTT_POOL_AVAILABLE_TOPIC "homeassistant/pool/available"
-#define MQTT_POOL_PUMP1_TOPIC "homeassistant/pool/pump1"
-#define MQTT_POOL_PUMP2_TOPIC "homeassistant/pool/pump2"
-#define MQTT_POOL_PUMP3_TOPIC "homeassistant/pool/pump3"
-#define MQTT_POOL_PUMP4_TOPIC "homeassistant/pool/pump4"
-#define MQTT_POOL_TEMPERATURE_TOPIC "homeassistant/pool/pool_temperature"
-#define MQTT_AIR_TEMPERATURE_TOPIC "homeassistant/pool/air_temperature"
-#define MQTT_SPA_TOPIC "homeassistant/pool/spa"
-#define MQTT_CLEANER_TOPIC "homeassistant/pool/cleaner"
-#define MQTT_AIR_BLOWER_TOPIC "homeassistant/pool/air_blower"
-#define MQTT_SPA_LIGHT_TOPIC "homeassistant/pool/spa_light"
-#define MQTT_POOL_LIGHT_TOPIC "homeassistant/pool/pool_light"
-#define MQTT_POOL_TOPIC "homeassistant/pool/pool"
-#define MQTT_WATER_FEATURE1_TOPIC "homeassistant/pool/water_feature1"
-#define MQTT_SPILLWAY_TOPIC "homeassistant/pool/spillway"
+#define COMMAND(X) X "/set"
+#define CONFIG(X) X "/config"
+#define STATE(X) X "/state"
+#define STATUS(X) X "/status"
 
-#define MQTT_POOL_COMMAND_TOPIC "homeassistant/pool/pool/set"
-#define MQTT_SPA_COMMAND_TOPIC "homeassistant/pool/spa/set"
-#define MQTT_POOL_LIGHT_COMMAND_TOPIC "homeassistant/pool/pool_light/set"
-#define MQTT_SPA_LIGHT_COMMAND_TOPIC "homeassistant/pool/spa_light/set"
-#define MQTT_CLEANER_COMMAND_TOPIC "homeassistant/pool/cleaner/set"
+#define MQTT_HASSIO_STATUS_TOPIC "homeassistant/status"
+#define MQTT_POOL_TEMPERATURE_TOPIC "homeassistant/sensor/pool/pool_temperature"
+#define MQTT_AIR_TEMPERATURE_TOPIC "homeassistant/sensor/pool/air_temperature"
+#define MQTT_SPA_TOPIC "homeassistant/switch/pool/spa"
+#define MQTT_POOL_CLEANER_TOPIC "homeassistant/switch/pool/cleaner"
+#define MQTT_AIR_BLOWER_TOPIC "homeassistant/switch/pool/air_blower"
+#define MQTT_SPA_LIGHT_TOPIC "homeassistant/switch/pool/spa_light"
+#define MQTT_POOL_LIGHT_TOPIC "homeassistant/switch/pool/pool_light"
+#define MQTT_POOL_TOPIC "homeassistant/switch/pool/pool"
+#define MQTT_WATER_FEATURE1_TOPIC "homeassistant/switch/pool/water_feature1"
+#define MQTT_SPILLWAY_TOPIC "homeassistant/switch/pool/spillway"
 
 #define SPA_STATE(x) (x >> 0) & 1
 #define CLEANER_STATE(x) (x >> 1) & 1
@@ -145,6 +139,7 @@ typedef enum
 
 typedef enum
 {
+    UNKNOWN = 0,
     SPA = 1,
     CLEANER = 2,
     AIR_BLOWER = 3,
@@ -205,6 +200,7 @@ getDeviceName(DEVICE device)
 
 MAIN_STATUS_PACKET *main_status;
 PUMP_STATUS_PACKET *pump_status;
+bool mqtt_connected = false;
 
 static esp_err_t my_get_handler(httpd_req_t *req)
 {
@@ -328,54 +324,47 @@ static void readRS485()
                         {
                             ESP_LOGI(TAG, "Dest    : (0x%02x) %s", packet.dest, getDeviceName(packet.dest));
                             ESP_LOGI(TAG, "Source  : (0x%02x) %s", packet.src, getDeviceName(packet.src));
-                            ESP_LOGI(TAG, "Command : (0x%02x) %d", packet.command, packet.command);
-                            ESP_LOGI(TAG, "\n");
+                            ESP_LOGI(TAG, "Command : (0x%02x) %d\n", packet.command, packet.command);
                         }
                         if (packet.src == MAIN && packet.dest == BROADCAST)
                         {
                             main_status = (MAIN_STATUS_PACKET *)packet.data;
-                            ESP_LOGD(TAG, "Time:      %d:%d", main_status->hour, main_status->minute);
-                            ESP_LOGD(TAG, "Pump1: %s", str_state(PUMP1_STATE(main_status->equip1)));
-                            ESP_LOGD(TAG, "Cleaner: %s", str_state(CLEANER_STATE(main_status->equip1)));
-                            ESP_LOGD(TAG, "Air Blower: %s", str_state(AIR_BLOWER_STATE(main_status->equip1)));
-                            ESP_LOGD(TAG, "Pool temp: %d\n", main_status->pool_temp);
-                            ESP_LOGD(TAG, "Spa temp:  %d\n", main_status->spa_temp);
-                            ESP_LOGD(TAG, "Air temp:  %d\n", main_status->air_temp);
-                            ESP_LOGD(TAG, "Heater:    %d\n", main_status->heater_active);
-                            ESP_LOGD(TAG, "Spa: %s", str_state(SPA_STATE(main_status->equip1)));
+                            ESP_LOGI(TAG, "Time:       %d:%d", main_status->hour, main_status->minute);
+                            ESP_LOGI(TAG, "Pump1:      %s", str_state(PUMP1_STATE(main_status->equip1)));
+                            ESP_LOGI(TAG, "Cleaner:    %s", str_state(CLEANER_STATE(main_status->equip1)));
+                            ESP_LOGI(TAG, "Air Blower: %s", str_state(AIR_BLOWER_STATE(main_status->equip1)));
+                            ESP_LOGI(TAG, "Pool temp:  %d", main_status->pool_temp);
+                            ESP_LOGI(TAG, "Spa temp:   %d", main_status->spa_temp);
+                            ESP_LOGI(TAG, "Air temp:   %d", main_status->air_temp);
+                            ESP_LOGI(TAG, "Heater:     %d", main_status->heater_active);
+                            ESP_LOGI(TAG, "Spa:        %s\n", str_state(SPA_STATE(main_status->equip1)));
                             for (int i = 0; i < 8; i++)
                                 decode_data[i] = 48 + ((main_status->equip1 >> (7 - i)) & 1);
                             ESP_LOGD(TAG, "%s", decode_data);
-                            ESP_LOGD(TAG, "\n");
+
                             sprintf(mqtt_data, "%d", main_status->pool_temp);
-                            esp_mqtt_client_publish(client, MQTT_POOL_TEMPERATURE_TOPIC, mqtt_data, 0, 1, 1);
                             sprintf(mqtt_data, "%d", main_status->air_temp);
-                            esp_mqtt_client_publish(client, MQTT_AIR_TEMPERATURE_TOPIC, mqtt_data, 0, 1, 1);
-                            esp_mqtt_client_publish(client, MQTT_SPA_TOPIC, str_state(SPA_STATE(main_status->equip1)), 0, 1, 1);
-                            esp_mqtt_client_publish(client, MQTT_CLEANER_TOPIC, str_state(CLEANER_STATE(main_status->equip1)), 0, 1, 1);
-                            esp_mqtt_client_publish(client, MQTT_AIR_BLOWER_TOPIC, str_state(AIR_BLOWER_STATE(main_status->equip1)), 0, 1, 1);
-                            esp_mqtt_client_publish(client, MQTT_SPA_TOPIC, str_state(SPA_STATE(main_status->equip1)), 0, 1, 1);
-                            esp_mqtt_client_publish(client, MQTT_POOL_LIGHT_TOPIC, str_state(POOL_LIGHT_STATE(main_status->equip1)), 0, 1, 1);
-                            esp_mqtt_client_publish(client, MQTT_SPA_LIGHT_TOPIC, str_state(SPA_LIGHT_STATE(main_status->equip1)), 0, 1, 1);
-                            esp_mqtt_client_publish(client, MQTT_POOL_TOPIC, str_state(PUMP1_STATE(main_status->equip1)), 0, 1, 1);
-                            esp_mqtt_client_publish(client, MQTT_WATER_FEATURE1_TOPIC, str_state(WATER_FEATURE1_STATE(main_status->equip1)), 0, 1, 1);
-                            esp_mqtt_client_publish(client, MQTT_SPILLWAY_TOPIC, str_state(SPILLWAY_STATE(main_status->equip1)), 0, 1, 1);
+                            if (mqtt_connected)
+                            {
+                                esp_mqtt_client_publish(client, MQTT_POOL_TEMPERATURE_TOPIC, mqtt_data, 0, 0, 0);
+                                esp_mqtt_client_publish(client, STATE(MQTT_AIR_TEMPERATURE_TOPIC), mqtt_data, 0, 0, 0);
+                                esp_mqtt_client_publish(client, STATE(MQTT_SPA_TOPIC), str_state(SPA_STATE(main_status->equip1)), 0, 0, 0);
+                                esp_mqtt_client_publish(client, STATE(MQTT_POOL_CLEANER_TOPIC), str_state(CLEANER_STATE(main_status->equip1)), 0, 0, 0);
+                                esp_mqtt_client_publish(client, STATE(MQTT_AIR_BLOWER_TOPIC), str_state(AIR_BLOWER_STATE(main_status->equip1)), 0, 0, 0);
+                                esp_mqtt_client_publish(client, STATE(MQTT_SPA_TOPIC), str_state(SPA_STATE(main_status->equip1)), 0, 0, 0);
+                                esp_mqtt_client_publish(client, STATE(MQTT_POOL_LIGHT_TOPIC), str_state(POOL_LIGHT_STATE(main_status->equip1)), 0, 0, 0);
+                                esp_mqtt_client_publish(client, STATE(MQTT_SPA_LIGHT_TOPIC), str_state(SPA_LIGHT_STATE(main_status->equip1)), 0, 0, 0);
+                                esp_mqtt_client_publish(client, STATE(MQTT_POOL_TOPIC), str_state(PUMP1_STATE(main_status->equip1)), 0, 0, 0);
+                                esp_mqtt_client_publish(client, STATE(MQTT_WATER_FEATURE1_TOPIC), str_state(WATER_FEATURE1_STATE(main_status->equip1)), 0, 0, 0);
+                                esp_mqtt_client_publish(client, STATE(MQTT_SPILLWAY_TOPIC), str_state(SPILLWAY_STATE(main_status->equip1)), 0, 0, 0);
+                            }
                         }
                         else if ((packet.src = PUMP1 || packet.src == PUMP2 || packet.src == PUMP3 || packet.src == PUMP4) && packet.dest == MAIN && packet.command == 0x07)
                         {
                             // we have a pump status packet
                             pump_status = (PUMP_STATUS_PACKET *)packet.data;
-                            ESP_LOGD(TAG, "Started:     %d\n", pump_status->started);
-                            ESP_LOGD(TAG, "Feature 1:   %d\n", pump_status->feature1);
-                            ESP_LOGD(TAG, "Drive state: %d\n", pump_status->drive_state);
-                            ESP_LOGD(TAG, "Watts:       %d\n", pump_status->watts);
-                            ESP_LOGD(TAG, "Watts:       %d\n", (packet.data[3] << 8) + packet.data[4]);
-                            ESP_LOGD(TAG, "RPMs:        %d\n", pump_status->rpm);
-                            ESP_LOGD(TAG, "GPMs:        %d\n", pump_status->gpm);
-                            ESP_LOGD(TAG, "Percent:     %d\n", pump_status->percent);
-                            ESP_LOGD(TAG, "Err:         %d\n", pump_status->err);
-                            ESP_LOGD(TAG, "Timer:       %d\n", pump_status->timer);
-                            ESP_LOGD(TAG, "Clock:       %d\n", pump_status->clk);
+                            ESP_LOGI(TAG, "Watts:       %d", pump_status->watts);
+                            ESP_LOGI(TAG, "RPMs:        %d", pump_status->rpm);
                         }
                     }
 
@@ -390,64 +379,83 @@ static void readRS485()
 static esp_err_t mqtt_event_handler_cb(esp_mqtt_event_handle_t event)
 {
     esp_mqtt_client_handle_t client = event->client;
-    int msg_id;
+    int msg_id = 0;
     uint8_t feature;
     switch (event->event_id)
     {
     case MQTT_EVENT_CONNECTED:
         msg_id = esp_mqtt_client_subscribe(client, MQTT_HASSIO_STATUS_TOPIC, 0);
-        ESP_LOGI(TAG, "Subscribe to HomeAssistant, msg_id=%d", msg_id);
-        msg_id = esp_mqtt_client_subscribe(client, MQTT_POOL_COMMAND_TOPIC, 0);
-        ESP_LOGI(TAG, "Subscribe to pool command topic, msg_id=%d", msg_id);
-        msg_id = esp_mqtt_client_subscribe(client, MQTT_SPA_COMMAND_TOPIC, 0);
-        ESP_LOGI(TAG, "Subscribe to spa command topic, msg_id=%d", msg_id);
-        msg_id = esp_mqtt_client_subscribe(client, MQTT_CLEANER_COMMAND_TOPIC, 0);
-        ESP_LOGI(TAG, "Subscribe to cleaner command topic, msg_id=%d", msg_id);
-        msg_id = esp_mqtt_client_subscribe(client, MQTT_POOL_LIGHT_COMMAND_TOPIC, 0);
-        ESP_LOGI(TAG, "Subscribe to pool_light command topic, msg_id=%d", msg_id);
-        msg_id = esp_mqtt_client_subscribe(client, MQTT_SPA_LIGHT_COMMAND_TOPIC, 0);
-        ESP_LOGI(TAG, "Subscribe to spa_light command topic, msg_id=%d", msg_id);
+        msg_id = esp_mqtt_client_subscribe(client, COMMAND(MQTT_POOL_TOPIC), 0);
+        msg_id = esp_mqtt_client_subscribe(client, COMMAND(MQTT_SPA_TOPIC), 0);
+        msg_id = esp_mqtt_client_subscribe(client, COMMAND(MQTT_POOL_CLEANER_TOPIC), 0);
+        msg_id = esp_mqtt_client_subscribe(client, COMMAND(MQTT_POOL_LIGHT_TOPIC), 0);
+        msg_id = esp_mqtt_client_subscribe(client, COMMAND(MQTT_SPA_LIGHT_TOPIC), 0);
+        msg_id = esp_mqtt_client_subscribe(client, COMMAND(MQTT_AIR_BLOWER_TOPIC), 0);
+        msg_id = esp_mqtt_client_subscribe(client, COMMAND(MQTT_WATER_FEATURE1_TOPIC), 0);
+        msg_id = esp_mqtt_client_subscribe(client, COMMAND(MQTT_SPILLWAY_TOPIC), 0);
 
+        msg_id = esp_mqtt_client_publish(client, CONFIG(MQTT_POOL_TOPIC), "{\"unique_id\": \"pool_pool\", \"name\": \"Pool: Pool\", \"state_topic\": \"homeassistant/switch/pool/pool/state\", \"command_topic\": \"homeassistant/switch/pool/pool/set\", \"state_on\": \"on\", \"state_off\": \"off\", \"payload_on\": \"on\", \"payload_off\": \"off\"}", 0, 0, 0);
+        msg_id = esp_mqtt_client_publish(client, CONFIG(MQTT_SPA_TOPIC), "{\"unique_id\": \"pool_spa\", \"name\": \"Pool: Spa\", \"state_topic\": \"homeassistant/switch/pool/spa/state\", \"command_topic\": \"homeassistant/switch/pool/spa/set\", \"state_on\": \"on\", \"state_off\": \"off\", \"payload_on\": \"on\", \"payload_off\": \"off\"}", 0, 0, 0);
+        msg_id = esp_mqtt_client_publish(client, CONFIG(MQTT_POOL_LIGHT_TOPIC), "{\"unique_id\": \"pool_pool_light\", \"name\": \"Pool: Pool Light\", \"state_topic\": \"homeassistant/switch/pool/pool_light/state\", \"command_topic\": \"homeassistant/switch/pool/pool_light/set\", \"state_on\": \"on\", \"state_off\": \"off\", \"payload_on\": \"on\", \"payload_off\": \"off\"}", 0, 0, 0);
+        msg_id = esp_mqtt_client_publish(client, CONFIG(MQTT_SPA_LIGHT_TOPIC), "{\"unique_id\": \"pool_spa_light\", \"name\": \"Pool: Spa Light\", \"state_topic\": \"homeassistant/switch/pool/spa_light/state\", \"command_topic\": \"homeassistant/switch/pool/spa_light/set\", \"state_on\": \"on\", \"state_off\": \"off\", \"payload_on\": \"on\", \"payload_off\": \"off\"}", 0, 0, 0);
+        msg_id = esp_mqtt_client_publish(client, CONFIG(MQTT_AIR_BLOWER_TOPIC), "{\"unique_id\": \"pool_spa_air_blower\", \"name\": \"Pool: Air Blower\", \"state_topic\": \"homeassistant/switch/pool/air_blower/state\", \"command_topic\": \"homeassistant/switch/pool/air_blower/set\", \"state_on\": \"on\", \"state_off\": \"off\", \"payload_on\": \"on\", \"payload_off\": \"off\"}", 0, 0, 0);
+        msg_id = esp_mqtt_client_publish(client, CONFIG(MQTT_POOL_CLEANER_TOPIC), "{\"unique_id\": \"pool_cleaner\", \"name\": \"Pool: Pool Cleaner\", \"state_topic\": \"homeassistant/switch/pool/cleaner/state\", \"command_topic\": \"homeassistant/switch/pool/cleaner/set\", \"state_on\": \"on\", \"state_off\": \"off\", \"payload_on\": \"on\", \"payload_off\": \"off\"}", 0, 0, 0);
+        msg_id = esp_mqtt_client_publish(client, CONFIG(MQTT_WATER_FEATURE1_TOPIC), "{\"unique_id\": \"pool_water_feature1\", \"name\": \"Pool: Water Feature 1\", \"state_topic\": \"homeassistant/switch/pool/water_feature1/state\", \"command_topic\": \"homeassistant/switch/pool/water_feature1/set\", \"state_on\": \"on\", \"state_off\": \"off\", \"payload_on\": \"on\", \"payload_off\": \"off\"}", 0, 0, 0);
+        msg_id = esp_mqtt_client_publish(client, CONFIG(MQTT_SPILLWAY_TOPIC), "{\"unique_id\": \"pool_spillway\", \"name\": \"Pool: Spillway\", \"state_topic\": \"homeassistant/switch/pool/spillway/state\", \"command_topic\": \"homeassistant/switch/pool/spillway/set\", \"state_on\": \"on\", \"state_off\": \"off\", \"payload_on\": \"on\", \"payload_off\": \"off\"}", 0, 0, 0);
+        msg_id = esp_mqtt_client_publish(client, CONFIG(MQTT_POOL_TEMPERATURE_TOPIC), "{\"unique_id\": \"pool_pool_temperature\", \"name\": \"Pool: Pool Temperature\", \"device_class\": \"temperature\", \"state_topic\": \"homeassistant/sensor/pool/pool_temperature/state\", \"unit_of_measurement\": \"°F\"}", 0, 0, 0);
+        msg_id = esp_mqtt_client_publish(client, CONFIG(MQTT_AIR_TEMPERATURE_TOPIC), "{\"unique_id\": \"pool_air_temperature\", \"name\": \"Pool: Air Temperature\", \"device_class\": \"temperature\", \"state_topic\": \"homeassistant/sensor/pool/air_temperature/state\", \"unit_of_measurement\": \"°F\"}", 0, 0, 0);
+        mqtt_connected = true;
         break;
+
     case MQTT_EVENT_DISCONNECTED:
         ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
+        mqtt_connected = false;
         break;
 
     case MQTT_EVENT_SUBSCRIBED:
         ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
-        msg_id = esp_mqtt_client_publish(client, MQTT_POOL_AVAILABLE_TOPIC, "online", 0, 0, 1);
-        ESP_LOGI(TAG, "sent publish successful, msg_id=%d", msg_id);
         break;
+
     case MQTT_EVENT_UNSUBSCRIBED:
         ESP_LOGI(TAG, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", event->msg_id);
         break;
+
     case MQTT_EVENT_PUBLISHED:
         ESP_LOGD(TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
         break;
+
     case MQTT_EVENT_DATA:
+        if (!mqtt_connected)
+            break;
         ESP_LOGI(TAG, "MQTT_EVENT_DATA");
         ESP_LOGI(TAG, "TOPIC='%.*s'\r\n", event->topic_len, event->topic);
         ESP_LOGI(TAG, "DATA='%.*s'\r\n", event->data_len, event->data);
-
-        if (strncmp(event->topic, MQTT_POOL_COMMAND_TOPIC, event->topic_len) == 0)
+        feature = UNKNOWN;
+        if (strncmp(event->topic, COMMAND(MQTT_POOL_TOPIC), event->topic_len) == 0)
             feature = POOL;
-        else if (strncmp(event->topic, MQTT_SPA_COMMAND_TOPIC, event->topic_len) == 0)
+        else if (strncmp(event->topic, COMMAND(MQTT_SPA_TOPIC), event->topic_len) == 0)
             feature = SPA;
-        else if (strncmp(event->topic, MQTT_POOL_LIGHT_COMMAND_TOPIC, event->topic_len) == 0)
+        else if (strncmp(event->topic, COMMAND(MQTT_POOL_LIGHT_TOPIC), event->topic_len) == 0)
             feature = POOL_LIGHT;
-        else if (strncmp(event->topic, MQTT_SPA_LIGHT_COMMAND_TOPIC, event->topic_len) == 0)
+        else if (strncmp(event->topic, COMMAND(MQTT_SPA_LIGHT_TOPIC), event->topic_len) == 0)
             feature = SPA_LIGHT;
-        if (strncmp(event->topic, MQTT_CLEANER_COMMAND_TOPIC, event->topic_len) == 0)
+        else if (strncmp(event->topic, COMMAND(MQTT_POOL_CLEANER_TOPIC), event->topic_len) == 0)
             feature = CLEANER;
+        else if (strncmp(event->topic, COMMAND(MQTT_AIR_BLOWER_TOPIC), event->topic_len) == 0)
+            feature = AIR_BLOWER;
+        else if (strncmp(event->topic, COMMAND(MQTT_WATER_FEATURE1_TOPIC), event->topic_len) == 0)
+            feature = WATER_FEATURE;
+        else if (strncmp(event->topic, COMMAND(MQTT_SPILLWAY_TOPIC), event->topic_len) == 0)
+            feature = SPILLWAY;
         else
         {
-            ESP_LOGI(TAG, "Unknown feature topic %s", event->topic);
+            ESP_LOGE(TAG, "Unknown feature topic %s", event->topic);
             break;
         }
         if (strncmp(event->data, "on", event->data_len) == 0)
         {
             ESP_LOGI(TAG, "Switching feature %02x ON **********************", feature);
-            sendCommand(REMOTE, MAIN, SET_CIRCUIT, feature, 0);
+            sendCommand(REMOTE, MAIN, SET_CIRCUIT, feature, 1);
         }
         else if (strncmp(event->data, "off", event->data_len) == 0)
         {
