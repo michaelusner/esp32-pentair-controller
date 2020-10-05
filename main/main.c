@@ -346,7 +346,7 @@ static void readRS485()
                             sprintf(mqtt_data, "%d", main_status->air_temp);
                             if (mqtt_connected)
                             {
-                                esp_mqtt_client_publish(client, MQTT_POOL_TEMPERATURE_TOPIC, mqtt_data, 0, 0, 0);
+                                esp_mqtt_client_publish(client, STATE(MQTT_POOL_TEMPERATURE_TOPIC), mqtt_data, 0, 0, 0);
                                 esp_mqtt_client_publish(client, STATE(MQTT_AIR_TEMPERATURE_TOPIC), mqtt_data, 0, 0, 0);
                                 esp_mqtt_client_publish(client, STATE(MQTT_SPA_TOPIC), str_state(SPA_STATE(main_status->equip1)), 0, 0, 0);
                                 esp_mqtt_client_publish(client, STATE(MQTT_POOL_CLEANER_TOPIC), str_state(CLEANER_STATE(main_status->equip1)), 0, 0, 0);
