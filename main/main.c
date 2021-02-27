@@ -13,14 +13,6 @@
 
 #include "mqtt_client.h"
 
-// startup
-// Read NVS values
-// no values
-//   - don't create mqtt client
-// config page
-//    mqtt form
-//    networking form
-
 const esp_mqtt_client_config_t mqtt_cfg = {
     .uri = "mqtt://192.168.1.24:1883",
     .username = "hauser",
@@ -93,6 +85,8 @@ static const char *TAG = "RS485_PENTAIR_CONTROLLER";
 
 const uint8_t packet_header = 0xA5;
 const int uart_num = ECHO_UART_PORT;
+
+SemaphoreHandle_t semMainStatus = NULL;
 
 typedef struct
 {
@@ -232,6 +226,8 @@ static esp_err_t http_get_handler(httpd_req_t *req)
     gpio_set_level(HTTP_BLINK_GPIO, 1);
     if (strcmp(req->uri, "/metrics") == 0)
     {
+        // take the packet semaphore
+        xSemaphoreTake(semMainStatus, portMAX_DELAY);
         if (main_status == NULL)
         {
             gpio_set_level(HTTP_BLINK_GPIO, 0);
@@ -278,6 +274,7 @@ static esp_err_t http_get_handler(httpd_req_t *req)
             gpio_set_level(HTTP_BLINK_GPIO, 0);
             httpd_resp_send(req, response, strlen(response));
         }
+        xSemaphoreGive(semMainStatus);
     }
     else
     {
@@ -294,17 +291,17 @@ static void sendCommand(DEVICE from, DEVICE to, COMMAND command, uint8_t feature
     int res;
     gpio_set_level(COMMAND_BLINK_GPIO, 1);
     ESP_LOGI(TAG, "Sending command from=%02x to=%02x command=%02x feature=%02x state=%02x", from, to, command, feature, state);
-    uint8_t packet[12] = {0x00, 0xFF, 0xA5, 0x1F, to, from, command, 2, feature, state};
+    uint8_t cmd_packet[12] = {0x00, 0xFF, 0xA5, 0x1F, to, from, command, 2, feature, state};
     uint16_t checksum = 0;
     for (int i = 2; i < 12; i++)
-        checksum += packet[i];
-    packet[10] = checksum / 256;
-    packet[11] = checksum % 256;
+        checksum += cmd_packet[i];
+    cmd_packet[10] = checksum / 256;
+    cmd_packet[11] = checksum % 256;
     for (int i = 0; i < 12; i++)
     {
-        printf("%02x ", packet[i]);
+        printf("%02x ", cmd_packet[i]);
     }
-    res = uart_write_bytes(uart_num, (char *)&packet, 12);
+    res = uart_write_bytes(uart_num, (char *)&cmd_packet, 12);
     vTaskDelay(50);
     ESP_LOGI(TAG, "%d", res);
     gpio_set_level(COMMAND_BLINK_GPIO, 0);
@@ -371,7 +368,6 @@ static void readRS485()
                     packet.length = data[start + 5];
                     packet.data = &data[start + 6];
                     packet.checksum = (data[start + 6 + packet.length] << 8) + data[start + 7 + packet.length];
-
                     // calculate the checksum
                     checksum = 0;
                     for (int j = start; j < start + packet.length + 6; j++)
@@ -386,9 +382,12 @@ static void readRS485()
                         ESP_LOGI(TAG, "Dest    : (0x%02x) %s", packet.dest, getDeviceName(packet.dest));
                         ESP_LOGI(TAG, "Command : (0x%02x) %d\n", packet.command, packet.command);
 
-                        if (packet.src == MAIN && packet.dest == BROADCAST)
+                        if (packet.src == MAIN && packet.dest == BROADCAST && packet.command == 0x02)
                         {
-                            main_status = (MAIN_STATUS_PACKET *)packet.data;
+                            xSemaphoreTake(semMainStatus, portMAX_DELAY);
+                            memcpy(main_status, packet.data, sizeof(MAIN_STATUS_PACKET));
+                            xSemaphoreGive(semMainStatus);
+                            //main_status = (MAIN_STATUS_PACKET *)packet.data;
                             ESP_LOGI(TAG, "Time:        %d:%d", main_status->hour, main_status->minute);
                             ESP_LOGI(TAG, "Pump1:       %s", str_state(PUMP1_STATE(main_status->equip1)));
                             ESP_LOGI(TAG, "Cleaner:     %s", str_state(CLEANER_STATE(main_status->equip1)));
@@ -432,7 +431,6 @@ static void readRS485()
                         }
                         break;
                     }
-
                     i = i + packet.length;
                 }
             }
@@ -563,6 +561,8 @@ static void mqttLoop()
 
 void app_main()
 {
+    main_status = malloc(sizeof(MAIN_STATUS_PACKET));
+    semMainStatus = xSemaphoreCreateMutex();
     gpio_reset_pin(MQTT_BLINK_GPIO);
     gpio_set_direction(MQTT_BLINK_GPIO, GPIO_MODE_OUTPUT);
     gpio_reset_pin(COMMAND_BLINK_GPIO);
