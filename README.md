@@ -28,3 +28,11 @@ For this project, I used the following:
  | 16 | R0 |
  | 17 | D1 |
  
+## Configuration
+TODO
+
+## MQTT Server
+TODO
+
+## Home Assistant
+TODO
