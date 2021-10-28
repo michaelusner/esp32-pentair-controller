@@ -1,4 +1,10 @@
-# ESP32 MQTT Pentair Controller
+# ESP32 MQTT Pentair Pool Controller
+* Send MQTT commands to your pool to control
+  * Pool pump
+  * Spa
+  * Lights
+  * Features
+
 * Easily integrated with HomeAssistant
 
 ![image](https://github.com/michaelusner/esp32_pentair_controller/blob/master/images/esp32_pentair_controller.jpg?raw=true)
