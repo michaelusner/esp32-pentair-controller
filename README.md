@@ -1,4 +1,4 @@
-# ESP32 MQTT Pentair Pool Controller
+# ESP32 WIFI Pentair Pool Controller
 * Send MQTT commands to your pool to control
   * Pool pump
   * Spa
