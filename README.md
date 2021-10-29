@@ -7,7 +7,7 @@
 
 * Easily integrated with HomeAssistant
 
-![image](https://github.com/michaelusner/esp32_pentair_controller/blob/master/images/esp32_pentair_controller.jpg?raw=true)
+![image](https://github.com/michaelusner/esp32_pentair_controller/blob/master/images/overview.png?raw=true)
 
 ## Hardware
 For this project, I used the following:
