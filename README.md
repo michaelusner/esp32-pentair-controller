@@ -22,6 +22,7 @@ For this project, I used the following:
 
 ## Wiring
  Here's the wiring diagram:
+ 
 ![image](https://github.com/michaelusner/esp32_pentair_controller/blob/master/images/wiring.jpg?raw=true)
 
  MAX485 Input:
