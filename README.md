@@ -46,3 +46,6 @@ TODO
 
 ## Home Assistant
 TODO
+
+## TODO
+Configure MQTT server via web interface
