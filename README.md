@@ -7,6 +7,7 @@
 
 * Easily integrated with HomeAssistant
 * FreeRTOS based
+* Includes Prometheus metrics on ```/metrics``` URL
 
 ![image](https://github.com/michaelusner/esp32_pentair_controller/blob/master/images/overview.png?raw=true)
 
