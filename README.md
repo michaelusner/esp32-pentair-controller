@@ -11,6 +11,9 @@
 
 ![image](https://github.com/michaelusner/esp32_pentair_controller/blob/master/images/overview.png?raw=true)
 
+## Track your metrics with Prometheus and Grafana
+![image](https://github.com/michaelusner/esp32_pentair_controller/blob/master/images/prometheus-metrics.jpg?raw=true) ![image](https://github.com/michaelusner/esp32_pentair_controller/blob/master/images/grafana.jpg?raw=true)
+
 ## Hardware
 For this project, I used the following:
  * ESP32-DevKitC which I bought from [Amazon](https://www.amazon.com/gp/product/B0811LGWY2/ref=ppx_yo_dt_b_search_asin_title?ie=UTF8&psc=1)
